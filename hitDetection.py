@@ -12,8 +12,6 @@ from matplotlib import pyplot as plt
 # print numpy arrays without scientific notation
 np.set_printoptions(suppress=True)
 
-
-
 def norm_2(x1, x2, y1, y2):
     return np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
@@ -54,8 +52,8 @@ human_learning_rate = 1.5
 # r = Replay.from_path(r'.\replays_lobotomy\razorfruit_BLOODY_RED.osr')
 # o_map = OsuFile('BLOODY_RED.osu').parse_file()
 
-r = Replay.from_path(r'.\replays_gmtn\razorfruit_gmtn.osr')
-o_map = OsuFile('gmtn.osu').parse_file()
+r = Replay.from_path(r'.\replays_shemoves\razorfruit_shemoves.osr')
+o_map = OsuFile('she_moves.osu').parse_file()
 
 r_data = r.replay_data
 m_data = o_map.hit_objects
@@ -192,7 +190,7 @@ for hit_circle in map_data:
 
         i += 1
 
-    if miss and not assigned[min_delay_idx]:
+    if miss and not isinstance(assigned[min_delay_idx], np.ndarray):
         x_hit = hit_attempts[min_delay_idx][1]
         y_hit = hit_attempts[min_delay_idx][2]
         hit_errors.append((x_circle - x_hit, y_circle - y_hit))
