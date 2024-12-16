@@ -34,244 +34,264 @@ def solve_theta(x1, x2, y1, y2, degrees=True):
 
     return angle
 
-# class HitDetector:
-#     def __init__(self, map, replay, debug=False, plot=False, human_learning_rate=1.5):
-#         self.map = map
-#         self.replay = replay
-#         self.debug = debug
-#         self.plot = plot
-#         self.human_learning_rate = 1.5
-#         self.hits_circles_array = []
+class HitDetector:
+    def __init__(self, map, replay, debug=False, human_learning_rate=1.5, ignore_radius=50):
+        self.map = map
+        self.replay = replay
+        self.debug = debug
+        self.human_learning_rate = 1.5
+        self.hits_array = []
+        self.circles_array = []
+        self.hit_errors = []
+        self.ignore_radius = ignore_radius
+        self.radius = 0
+        self.adj_theta = 0
+        self.adj_size = 0
 
-debug = False
-plot = True
+    def process_map_data(self):
+        # IMPORT REPLAY AND MAP
+        r = Replay.from_path(self.replay)
+        o_map = OsuFile(self.map).parse_file()
 
-human_learning_rate = 1.5
+        r_data = r.replay_data
+        m_data = o_map.hit_objects
 
-# IMPORT REPLAY AND MAP
-# r = Replay.from_path(r'.\replays_lobotomy\razorfruit_BLOODY_RED.osr')
-# o_map = OsuFile('BLOODY_RED.osu').parse_file()
+        cs, od = o_map.cs, o_map.od
 
-r = Replay.from_path(r'.\replays_shemoves\razorfruit_shemoves.osr')
-o_map = OsuFile('she_moves.osu').parse_file()
+        # MAP STATS
+        self.radius = 54.4 - 4.48 * cs
+        window_300 = 80 - 6 * od
+        window_100 = 140 - 8 * od
+        window_50 = 200 - 10 * od
 
-r_data = r.replay_data
-m_data = o_map.hit_objects
+        hit_data = []
+        map_data = []
 
-cs, od = o_map.cs, o_map.od
+        m_data = stacking_fix(m_data, o_map, self.radius, False)
 
-# MAP STATS
-radius = 54.4 - 4.48 * cs
-window_300 = 80 - 6 * od
-window_100 = 140 - 8 * od
-window_50 = 200 - 10 * od
+        # CONVERT REPLAY AND MAP DATA INTO NUMPY ARRAYS
+        for i, event in enumerate(r_data):
+            time_delta = event.__getattribute__('time_delta')
+            x = event.__getattribute__('x')
+            y = event.__getattribute__('y')
+            keys = event.__getattribute__('keys')
 
-hit_data = []
-map_data = []
+            hit_data.append([time_delta, x, y, keys])
 
-m_data = stacking_fix(m_data, o_map, radius, False)
+        for i, circle in enumerate(m_data):
+            if isinstance(circle, Spinner):
+                continue
 
-# CONVERT REPLAY AND MAP DATA INTO NUMPY ARRAYS
-for i, event in enumerate(r_data):
-    time_delta = event.__getattribute__('time_delta')
-    x = event.__getattribute__('x')
-    y = event.__getattribute__('y')
-    keys = event.__getattribute__('keys')
+            x, y = circle.pos.x, circle.pos.y
+            time = circle.start_time
 
-    hit_data.append([time_delta, x, y, keys])
+            map_data.append([time, x, y])
 
-for i, circle in enumerate(m_data):
-    if isinstance(circle, Spinner):
-        continue
+        # convert to numpy arrays
+        hit_data = np.array(hit_data)
+        map_data = np.array(map_data)
 
-    x, y = circle.pos.x, circle.pos.y
-    time = circle.start_time
+        # change relative time to absolute time
+        hit_data[:, 0] = np.cumsum(hit_data[:, 0])
 
-    map_data.append([time, x, y])
+        # filter hit attempts for only k1, k2 presses
+        key_presses = hit_data[:, 3]
 
-# convert to numpy arrays
-hit_data = np.array(hit_data)
-map_data = np.array(map_data)
+        mask = [False]
 
-# change relative time to absolute time
-hit_data[:, 0] = np.cumsum(hit_data[:, 0])
+        for i, curr_event in enumerate(hit_data[1:]):
+            prev_hit = hit_data[i][3]
+            curr_hit = curr_event[3]
 
-# filter hit attempts for only k1, k2 presses
-key_presses = hit_data[:, 3]
+            curr_hit = Key(int(curr_hit))
+            prev_hit = Key(int(prev_hit))
 
-mask = [False]
+            if curr_hit <= 0:
+                mask.append(False)
+            elif (Key.K1 in prev_hit and Key.K2 in prev_hit) and (Key.K1 in curr_hit and Key.K2 not in curr_hit):
+                mask.append(False)
+            elif (Key.K1 in prev_hit and Key.K2 in prev_hit) and (Key.K1 not in curr_hit and Key.K2 in curr_hit):
+                mask.append(False)
+            elif prev_hit == curr_hit:
+                mask.append(False)
+            elif prev_hit <= 0 and (Key.K1 in curr_hit or Key.K2 in curr_hit):
+                mask.append(True)
+            elif Key.K1 in prev_hit and Key.K2 in curr_hit:
+                mask.append(True)
+            elif Key.K2 in prev_hit and Key.K1 in curr_hit:
+                mask.append(True)
+            else:
+                mask.append(False)
 
-for i, curr_event in enumerate(hit_data[1:]):
-    prev_hit = hit_data[i][3]
-    curr_hit = curr_event[3]
+        hit_attempts = hit_data[mask]
 
-    curr_hit = Key(int(curr_hit))
-    prev_hit = Key(int(prev_hit))
+        # Mask for debugging
+        # mask_range = [31456 - 110, 31966 + 110]
+        # print(hit_data[(hit_data[:, 0] > mask_range[0]) & (hit_data[:, 0] < mask_range[1])])
+        # print('\n')
+        # print(hit_attempts[(hit_attempts[:, 0] > mask_range[0]) & (hit_attempts[:, 0] < mask_range[1])])
 
-    if curr_hit <= 0:
-        mask.append(False)
-    elif (Key.K1 in prev_hit and Key.K2 in prev_hit) and (Key.K1 in curr_hit and Key.K2 not in curr_hit):
-        mask.append(False)
-    elif (Key.K1 in prev_hit and Key.K2 in prev_hit) and (Key.K1 not in curr_hit and Key.K2 in curr_hit):
-        mask.append(False)
-    elif prev_hit == curr_hit:
-        mask.append(False)
-    elif prev_hit <= 0 and (Key.K1 in curr_hit or Key.K2 in curr_hit):
-        mask.append(True)
-    elif Key.K1 in prev_hit and Key.K2 in curr_hit:
-        mask.append(True)
-    elif Key.K2 in prev_hit and Key.K1 in curr_hit:
-        mask.append(True)
-    else:
-        mask.append(False)
+        self.hit_errors = []
 
-hit_attempts = hit_data[mask]
+        start_idx = 0
+        miss_count = 0
+        hit_count = 0
+        assigned = [False] * len(hit_attempts)
 
-# Mask for debugging
-# mask_range = [31456 - 110, 31966 + 110]
-# print(hit_data[(hit_data[:, 0] > mask_range[0]) & (hit_data[:, 0] < mask_range[1])])
-# print('\n')
-# print(hit_attempts[(hit_attempts[:, 0] > mask_range[0]) & (hit_attempts[:, 0] < mask_range[1])])
+        # TODO: for circles with no associated hit, search and find the timestamp with the closest time to the circle time
+        # TODO: round hit errors off
 
-hit_errors = []
+        for hit_circle in map_data:
+            miss = True
+            min_delay = 999999
+            min_delay_idx = 0
+            i = start_idx
 
-# hit_attempts: [time, x, y, keys]
-# map_data: [time, x, y]
+            x_circle = hit_circle[1]
+            y_circle = hit_circle[2]
 
-start_idx = 0
-miss_count = 0
-hit_count = 0
-assigned = [False] * len(hit_attempts)
+            # Upper and lower 50 timing windows for each hit circle
+            timing_upper = hit_circle[0] + window_50
+            timing_lower = hit_circle[0] - window_50
 
-# TODO: for circles with no associated hit, search and find the timestamp with the closest time to the circle time
-# TODO: round hit errors off
+            time = hit_attempts[start_idx][0]
 
-for hit_circle in map_data:
-    miss = True
-    min_delay = 999999
-    min_delay_idx = 0
-    i = start_idx
+            while time < timing_upper and i < len(hit_attempts):
+                time = hit_attempts[i][0]
+                if hit_attempts[i][0] > timing_lower and not isinstance(assigned[i], np.ndarray):
+                    # find distance between hit attempt and hit circle
+                    x_hit = hit_attempts[i][1]
+                    y_hit = hit_attempts[i][2]
+                    hit_error = norm_2(x_circle, x_hit, y_circle, y_hit)
 
-    x_circle = hit_circle[1]
-    y_circle = hit_circle[2]
+                    # store the closest attempt for later use
+                    delay = abs(hit_circle[0] - hit_attempts[i][0])
+                    if delay < min_delay:
+                        min_delay_idx = i
+                        min_delay = delay
 
-    # Upper and lower 50 timing windows for each hit circle
-    timing_upper = hit_circle[0] + window_50
-    timing_lower = hit_circle[0] - window_50
+                    # if the attempted hit is within the circle's radius,
+                    # record and mark the hit attempt as used and continue
+                    # and set new starting index as the location of the assigned hit
+                    if hit_error <= self.radius:
+                        self.hit_errors.append((x_circle - x_hit, y_circle - y_hit))
+                        self.hits_array.append(hit_attempts[i])
+                        self.circles_array.append(hit_circle)
+                        if self.debug:
+                            print(f'HIT time:{time} at: ({x_hit: .2f}, {y_hit: .2f}) time: {hit_circle[0]} circle: ({x_circle: .2f}, {y_circle: .2f})')
+                        assigned[i] = hit_circle
+                        miss = False
+                        hit_count += 1
+                        start_idx = i
+                        break
 
-    time = hit_attempts[start_idx][0]
+                i += 1
 
-    while time < timing_upper and i < len(hit_attempts):
-        time = hit_attempts[i][0]
-        if hit_attempts[i][0] > timing_lower and not isinstance(assigned[i], np.ndarray):
-            # find distance between hit attempt and hit circle
-            x_hit = hit_attempts[i][1]
-            y_hit = hit_attempts[i][2]
-            hit_error = norm_2(x_circle, x_hit, y_circle, y_hit)
+            if miss and not isinstance(assigned[min_delay_idx], np.ndarray):
+                x_hit = hit_attempts[min_delay_idx][1]
+                y_hit = hit_attempts[min_delay_idx][2]
+                self.hit_errors.append((x_circle - x_hit, y_circle - y_hit))
+                self.hits_array.append(hit_attempts[min_delay_idx])
+                self.circles_array.append(hit_circle)
+                if self.debug:
+                    print(f'MISS time:{time} at: ({x_hit: .2f}, {y_hit: .2f}) time: {hit_circle[0]} circle: ({x_circle: .2f}, {y_circle: .2f})')
+                assigned[min_delay_idx] = hit_circle
+                start_idx = min_delay_idx
+                miss_count += 1
 
-            # store the closest attempt for later use
-            delay = abs(hit_circle[0] - hit_attempts[i][0])
-            if delay < min_delay:
-                min_delay_idx = i
-                min_delay = delay
+        if self.debug:
+            print(f'Miss count: {miss_count}, Hit count: {hit_count}')
 
-            # if the attempted hit is within the circle's radius,
-            # record and mark the hit attempt as used and continue
-            # and set new starting index as the location of the assigned hit
-            if hit_error <= radius:
-                hit_errors.append((x_circle - x_hit, y_circle - y_hit))
-                if debug:
-                    print(f'HIT time:{time} at: ({x_hit: .2f}, {y_hit: .2f}) time: {hit_circle[0]} circle: ({x_circle: .2f}, {y_circle: .2f})')
-                assigned[i] = hit_circle
-                miss = False
-                hit_count += 1
-                start_idx = i
-                break
 
-        i += 1
+    def process_rotation(self):
+        d_theta = []
+        for hit_attempt, circle in zip(self.hits_array, self.circles_array):
+            x_hit = hit_attempt[1]
+            y_hit = hit_attempt[2]
 
-    if miss and not isinstance(assigned[min_delay_idx], np.ndarray):
-        x_hit = hit_attempts[min_delay_idx][1]
-        y_hit = hit_attempts[min_delay_idx][2]
-        hit_errors.append((x_circle - x_hit, y_circle - y_hit))
-        if debug:
-            print(f'MISS time:{time} at: ({x_hit: .2f}, {y_hit: .2f}) time: {hit_circle[0]} circle: ({x_circle: .2f}, {y_circle: .2f})')
-        assigned[min_delay_idx] = hit_circle
-        start_idx = min_delay_idx
-        miss_count += 1
+            x_circ = circle[1]
+            y_circ = circle[2]
 
-if debug:
-    print(f'Miss count: {miss_count}, Hit count: {hit_count}')
+            r_circ = dist_from_center(x_circ, y_circ)
 
-hit_error_x = np.array([x for x, y in hit_errors])
-hit_error_y = np.array([y for x, y in hit_errors])
+            if r_circ > self.ignore_radius:
+                d_theta.append(solve_theta(x_circ, x_hit, y_circ, y_hit))
 
-d_theta = []
-d_size = []
+            self.adj_theta = np.mean(d_theta) * self.human_learning_rate
 
-for i, circle in enumerate(assigned):
-    if isinstance(circle, np.ndarray):
-        hit_attempt = hit_attempts[i]
+        print(f'mean theta deviation: {np.degrees(np.mean(d_theta))}\n'
+              f'suggested adjustment: {np.degrees(self.adj_theta)}')
 
-        x_hit = hit_attempt[1]
-        y_hit = hit_attempt[2]
+        return np.mean(d_theta)
 
-        x_circ = circle[1]
-        y_circ = circle[2]
+    def process_size(self):
+        d_size = []
 
-        dx = x_circ - x_hit
-        dy = y_circ - y_hit
+        for hit_attempt, circle in zip(self.hits_array, self.circles_array):
+            x_hit = hit_attempt[1]
+            y_hit = hit_attempt[2]
 
-        r_circ = dist_from_center(x_circ, y_circ)
-        r_hit = dist_from_center(x_hit, y_hit)
-        r_error = np.sqrt(dx ** 2 + dy ** 2)
+            x_circ = circle[1]
+            y_circ = circle[2]
 
-        d_size.append(r_circ / r_hit)
+            r_circ = dist_from_center(x_circ, y_circ)
+            r_hit = dist_from_center(x_hit, y_hit)
 
-        if r_circ > 50:
-            d_theta.append(solve_theta(x_circ, x_hit, y_circ, y_hit))
+            d_size.append(r_hit / r_circ)
 
-d_theta = np.array(d_theta)
-d_theta = np.degrees(d_theta)
-suggested_adj_theta = np.mean(d_theta) * human_learning_rate
+        self.adj_size = (np.mean(d_size) - 1)
 
-suggested_adj_size = - (np.mean(d_size) - 1) * human_learning_rate
+        print(f'mean size deviation: {np.mean(d_size)}\n'
+              f'suggested adjustment: {self.adj_size}')
 
-hit_error_adj_x = []
-hit_error_adj_y = []
+        return np.mean(d_size)
 
-for i, circle in enumerate(assigned):
-    if isinstance(circle, np.ndarray):
-        theta = np.radians(suggested_adj_theta)
-        hit_attempt = hit_attempts[i]
+    def plot_hit_errors(self):
+        hit_error_x = [x for x, y in self.hit_errors]
+        hit_error_y = [y for x, y in self.hit_errors]
 
-        x_hit = hit_attempt[1]
-        y_hit = hit_attempt[2]
+        fig, ax = plt.subplots(figsize=(5, 5))
 
-        x_circ = circle[1]
-        y_circ = circle[2]
+        circle = plt.Circle((0, 0), self.radius, color='C0', alpha=0.2)
+        ax.add_patch(circle)
+        ax.scatter(hit_error_x, hit_error_y, color='red', alpha=0.4, label='Hit Error Distribution')
+        ax.set_xlim(-self.radius - 20, self.radius + 20)
+        ax.set_ylim(-self.radius - 20, self.radius + 20)
+        plt.legend()
+        plt.show()
+
+    def plot_adj_hit_errors(self):
+        theta = - self.adj_theta
+        hit_error_x = np.array([x for x, y in self.hit_errors])
+        hit_error_y = np.array([y for x, y in self.hit_errors])
+
+        x_hit = np.array([x for _, x, y, _ in self.hits_array])
+        y_hit = np.array([y for _, x, y, _ in self.hits_array])
+
+        x_circ = np.array([x for _, x, y in self.circles_array])
+        y_circ = np.array([y for _, x, y in self.circles_array])
 
         x_hit_adj = (x_hit - 256) * np.cos(theta) - (y_hit - 192) * np.sin(theta) + 256
         y_hit_adj = (x_hit - 256) * np.sin(theta) + (y_hit - 192) * np.cos(theta) + 192
 
-        hit_error_adj_x.append(x_circ - x_hit_adj)
-        hit_error_adj_y.append(y_circ - y_hit_adj)
+        hit_error_adj_x = x_circ - x_hit_adj
+        hit_error_adj_y = y_circ - y_hit_adj
 
-# print(d_theta)
-print(f'mean theta deviation: {np.mean(d_theta)}\n'
-      f'suggested adjustment: {suggested_adj_theta}')
+        fig, ax = plt.subplots(figsize=(5, 5))
 
-print(f'mean size deviation: {np.mean(d_size)}\n'
-      f'suggested adjustment: {suggested_adj_size}')
+        circle = plt.Circle((0, 0), self.radius, color='C0', alpha=0.2)
+        ax.add_patch(circle)
+        ax.scatter(hit_error_x, hit_error_y, color='red', alpha=0.4, label='Original Hit Error Distribution')
+        ax.scatter(hit_error_adj_x, hit_error_adj_y, color='purple', alpha=0.8,
+                   label=fr'Suggested Adjustment- $\theta$: {np.degrees(self.adj_theta):.2f}, Size: {np.degrees(self.adj_size):.2f}')
+        ax.set_xlim(-self.radius - 20, self.radius + 20)
+        ax.set_ylim(-self.radius - 20, self.radius + 20)
+        plt.legend()
+        plt.show()
 
-if plot:
-    fig, ax = plt.subplots(figsize=(5, 5))
-
-    circle = plt.Circle((0, 0), radius, color='C0', alpha=0.2)
-    ax.add_patch(circle)
-    ax.scatter(hit_error_x, hit_error_y, color='red', alpha=0.4, label='Original Hit Error Distribution')
-    ax.scatter(hit_error_adj_x, hit_error_adj_y, color='purple', alpha=0.8, label=f'Suggested Adjustment {suggested_adj_theta:.2f} Degrees')
-    ax.set_xlim(-radius - 20, radius + 20)
-    ax.set_ylim(-radius - 20, radius + 20)
-    plt.legend()
-    plt.show()
+if __name__ == '__main__':
+    test = HitDetector('BLOODY_RED.osu', r'.\replays_lobotomy\auto_BLOODY_RED_5deg.osr')
+    test.process_map_data()
+    test.process_size()
+    test.process_rotation()
+    test.plot_adj_hit_errors()
