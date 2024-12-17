@@ -5,8 +5,6 @@ from osrparse.utils import Mod, Key
 from stacking import stacking_fix
 
 import numpy as np
-import pandas as pd
-from IPython.display import display
 from matplotlib import pyplot as plt
 
 # print numpy arrays without scientific notation
@@ -35,9 +33,9 @@ def solve_theta(x1, x2, y1, y2, degrees=True):
     return angle
 
 class HitDetector:
-    def __init__(self, map, replay, debug=False, human_learning_rate=1.5, ignore_radius=50):
-        self.map = map
+    def __init__(self, replay=None, map=None, debug=False, human_learning_rate=1.5, ignore_radius=50):
         self.replay = replay
+        self.map = map
         self.debug = debug
         self.human_learning_rate = 1.5
         self.hits_array = []
@@ -47,6 +45,20 @@ class HitDetector:
         self.radius = 0
         self.adj_theta = 0
         self.adj_size = 0
+
+    def set_map(self, map: str):
+        if map.endswith('.osu'):
+            self.map = map
+            return 'Set Map'
+        else:
+            return 'Please select a valid osu map (.osu)'
+
+    def set_replay(self, replay):
+        if replay.endswith('.osr'):
+            self.replay = replay
+            return 'Set Replay'
+        else:
+            return 'Please select a valid osu replay (.osr)'
 
     def process_map_data(self):
         # IMPORT REPLAY AND MAP
@@ -250,15 +262,26 @@ class HitDetector:
         hit_error_x = [x for x, y in self.hit_errors]
         hit_error_y = [y for x, y in self.hit_errors]
 
-        fig, ax = plt.subplots(figsize=(5, 5))
+        fig, ax = plt.subplots(figsize=(3, 3))
 
-        circle = plt.Circle((0, 0), self.radius, color='C0', alpha=0.2)
+        circle = plt.Circle((0, 0), self.radius, color='C0', alpha=0.5)
         ax.add_patch(circle)
-        ax.scatter(hit_error_x, hit_error_y, color='red', alpha=0.4, label='Hit Error Distribution')
+        ax.scatter(hit_error_x, hit_error_y, color='grey', alpha=0.5, label='Hits')
         ax.set_xlim(-self.radius - 20, self.radius + 20)
         ax.set_ylim(-self.radius - 20, self.radius + 20)
-        plt.legend()
-        plt.show()
+        fig.set_facecolor("#262626")
+        ax.set_facecolor("#262626")
+        ax.spines['bottom'].set_color('white')
+        ax.spines['top'].set_color('white')
+        ax.spines['left'].set_color('white')
+        ax.spines['right'].set_color('white')
+        ax.tick_params(axis='x', colors='white')
+        ax.tick_params(axis='y', colors='white')
+        plt.legend(facecolor="#262626", labelcolor='white', loc='upper right')
+        plt.title('Hit Error Distribution', color='white')
+        # plt.show()
+
+        return fig, ax
 
     def plot_adj_hit_errors(self):
         theta = - self.adj_theta
@@ -271,26 +294,40 @@ class HitDetector:
         x_circ = np.array([x for _, x, y in self.circles_array])
         y_circ = np.array([y for _, x, y in self.circles_array])
 
+        # Rotate hits around center of playfield
         x_hit_adj = (x_hit - 256) * np.cos(theta) - (y_hit - 192) * np.sin(theta) + 256
         y_hit_adj = (x_hit - 256) * np.sin(theta) + (y_hit - 192) * np.cos(theta) + 192
+
+        x_hit_adj *= 1 - self.adj_size
+        y_hit_adj *= 1 - self.adj_size
 
         hit_error_adj_x = x_circ - x_hit_adj
         hit_error_adj_y = y_circ - y_hit_adj
 
-        fig, ax = plt.subplots(figsize=(5, 5))
+        fig, ax = plt.subplots(figsize=(3, 3))
 
-        circle = plt.Circle((0, 0), self.radius, color='C0', alpha=0.2)
+        circle = plt.Circle((0, 0), self.radius, color='C0', alpha=0.5)
         ax.add_patch(circle)
-        ax.scatter(hit_error_x, hit_error_y, color='red', alpha=0.4, label='Original Hit Error Distribution')
-        ax.scatter(hit_error_adj_x, hit_error_adj_y, color='purple', alpha=0.8,
-                   label=fr'Suggested Adjustment- $\theta$: {np.degrees(self.adj_theta):.2f}, Size: {np.degrees(self.adj_size):.2f}')
+        ax.scatter(hit_error_x, hit_error_y, color='grey', alpha=0.5, label='Hits')
+        ax.scatter(hit_error_adj_x, hit_error_adj_y, color='red', alpha=0.8, label='Adjusted')
         ax.set_xlim(-self.radius - 20, self.radius + 20)
         ax.set_ylim(-self.radius - 20, self.radius + 20)
-        plt.legend()
-        plt.show()
+        fig.set_facecolor("#262626")
+        ax.set_facecolor("#262626")
+        ax.spines['bottom'].set_color('white')
+        ax.spines['top'].set_color('white')
+        ax.spines['left'].set_color('white')
+        ax.spines['right'].set_color('white')
+        ax.tick_params(axis='x', colors='white')
+        ax.tick_params(axis='y', colors='white')
+        plt.legend(facecolor="#262626", labelcolor='white', loc='upper right')
+        plt.title('Adjusted Hit Errors', color='white')
+        # plt.show()
+
+        return fig, ax
 
 if __name__ == '__main__':
-    test = HitDetector('BLOODY_RED.osu', r'.\replays_lobotomy\auto_BLOODY_RED_5deg.osr')
+    test = HitDetector(r'.\replays_lobotomy\auto_BLOODY_RED_5deg.osr', r'.\maps\BLOODY_RED.osu')
     test.process_map_data()
     test.process_size()
     test.process_rotation()
