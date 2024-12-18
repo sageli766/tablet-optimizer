@@ -5,20 +5,46 @@ from osrparse.utils import Mod, Key
 from stacking import stacking_fix
 
 import numpy as np
+from scipy.optimize import least_squares
 from matplotlib import pyplot as plt
 
 # print numpy arrays without scientific notation
 np.set_printoptions(suppress=True)
 
+
 def norm_2(x1, x2, y1, y2):
+    '''
+    Helper function to compute the 2-norm
+    :param x1: x coordinate of the first point
+    :param x2: x coordinate of the second point
+    :param y1: y coordinate of the first point
+    :param y2: y coordinate of the second point
+    :return: Two-norm or Euclidean distance between the two vectors.
+    '''
     return np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
 
 def dist_from_center(x, y):
+    '''
+    Helper function to calculate the distance from the center of the playfield
+    :param x: x coordinate of the point in consideration
+    :param y: y coordinate of the point in consideration
+    :return: The point's distance from the center of the playfield
+    '''
     return norm_2(256, x, 192, y)
 
 
 def solve_theta(x1, x2, y1, y2, degrees=True):
+    '''
+    Solves for the signed angle between two vectors: magnitude is done by computing the dot product, sign is taken from
+    cross product
+    :param x1: x coordinate of the first point
+    :param x2: x coordinate of the second point
+    :param y1: y coordinate of the first point
+    :param y2: y coordinate of the second point
+    :param degrees:
+    :return: Signed angle between two vectors
+    '''
     r_circle = np.array([x1 - 256, y1 - 192])
     r_hit = np.array([x2 - 256, y2 - 192])
 
@@ -33,7 +59,17 @@ def solve_theta(x1, x2, y1, y2, degrees=True):
     return angle
 
 class HitDetector:
+    '''
+    Class for a hit analyzer object
+    '''
     def __init__(self, replay=None, map=None, debug=False, human_learning_rate=1.5, ignore_radius=50):
+        '''
+        :param replay: relative or absolute path to the replay
+        :param map: relative or absolute path to the map
+        :param debug: print extra debug information to the console
+        :param human_learning_rate: WIP- how fast people adjust to new tablet settings such as tilt
+        :param ignore_radius: radius inside of which hits are not considered (causing possibly unwanted large tilts)
+        '''
         self.replay = replay
         self.map = map
         self.debug = debug
@@ -61,6 +97,10 @@ class HitDetector:
             return 'Please select a valid osu replay (.osr)'
 
     def process_map_data(self):
+        '''
+        Processes map hits given replay and map path
+        :return:
+        '''
         # IMPORT REPLAY AND MAP
         r = Replay.from_path(self.replay)
         o_map = OsuFile(self.map).parse_file()
@@ -216,6 +256,9 @@ class HitDetector:
 
 
     def process_rotation(self):
+        '''
+        Calculates tilt of hits
+        '''
         d_theta = []
         for hit_attempt, circle in zip(self.hits_array, self.circles_array):
             x_hit = hit_attempt[1]
@@ -231,12 +274,16 @@ class HitDetector:
 
             self.adj_theta = np.mean(d_theta) * self.human_learning_rate
 
-        print(f'mean theta deviation: {np.degrees(np.mean(d_theta))}\n'
-              f'suggested adjustment: {np.degrees(self.adj_theta)}')
+        if self.debug:
+            print(f'mean theta deviation: {np.degrees(np.mean(d_theta))}\n'
+                  f'suggested adjustment: {np.degrees(self.adj_theta)}')
 
         return np.mean(d_theta)
 
     def process_size(self):
+        '''
+        Calculates size errors
+        '''
         d_size = []
 
         for hit_attempt, circle in zip(self.hits_array, self.circles_array):
@@ -253,12 +300,17 @@ class HitDetector:
 
         self.adj_size = (np.mean(d_size) - 1)
 
-        print(f'mean size deviation: {np.mean(d_size)}\n'
-              f'suggested adjustment: {self.adj_size}')
+        if self.debug:
+            print(f'mean size deviation: {np.mean(d_size)}\n'
+                  f'suggested adjustment: {self.adj_size}')
 
         return np.mean(d_size)
 
     def plot_hit_errors(self):
+        '''
+        Plots original hit errors against a hitcircle
+        :return: figure, axis tuple of plot
+        '''
         hit_error_x = [x for x, y in self.hit_errors]
         hit_error_y = [y for x, y in self.hit_errors]
 
@@ -279,11 +331,16 @@ class HitDetector:
         ax.tick_params(axis='y', colors='white')
         plt.legend(facecolor="#262626", labelcolor='white', loc='upper right')
         plt.title('Hit Error Distribution', color='white')
-        # plt.show()
+        if self.debug:
+            plt.show()
 
         return fig, ax
 
     def plot_adj_hit_errors(self):
+        '''
+        Plots adjusted hit errors based on calculated tilt and size offsets
+        :return: figure, axis objects of plot
+        '''
         theta = - self.adj_theta
         hit_error_x = np.array([x for x, y in self.hit_errors])
         hit_error_y = np.array([y for x, y in self.hit_errors])
@@ -322,13 +379,55 @@ class HitDetector:
         ax.tick_params(axis='y', colors='white')
         plt.legend(facecolor="#262626", labelcolor='white', loc='upper right')
         plt.title('Adjusted Hit Errors', color='white')
-        # plt.show()
+        if self.debug:
+            plt.show()
 
         return fig, ax
 
+    def least_squares_fit(self):
+        guess = [0., 0.]
+
+        def residual(params):
+            theta, size = params
+
+            # hit location and circle location arrays
+            x_hit = np.array([x for _, x, y, _ in self.hits_array])
+            y_hit = np.array([y for _, x, y, _ in self.hits_array])
+
+            x_circ = np.array([x for _, x, y in self.circles_array])
+            y_circ = np.array([y for _, x, y in self.circles_array])
+
+            # rotate hits around center of playfield
+            x_hit_adj = (x_hit - 256) * np.cos(theta) - (y_hit - 192) * np.sin(theta) + 256
+            y_hit_adj = (x_hit - 256) * np.sin(theta) + (y_hit - 192) * np.cos(theta) + 192
+
+            # scale hit positions
+            x_hit_adj *= size
+            y_hit_adj *= size
+
+            resid_x = x_circ - x_hit_adj
+            resid_y = y_circ - y_hit_adj
+
+            return np.concatenate((resid_x, resid_y))
+
+        result = least_squares(residual, guess)
+
+        theta_optimal, size_optimal = result.x
+
+        if self.debug:
+            print(f'[Least squares fit results] Theta: {np.degrees(theta_optimal)}, size: {size_optimal}')
+
+        self.adj_theta = - theta_optimal
+        self.adj_size = (1 - size_optimal)
+
+        return theta_optimal, size_optimal
+
+
 if __name__ == '__main__':
-    test = HitDetector(r'.\replays_lobotomy\auto_BLOODY_RED_5deg.osr', r'.\maps\BLOODY_RED.osu')
+    test = HitDetector(r'.\replays_lobotomy\auto_BLOODY_RED_5deg.osr', r'.\maps\BLOODY_RED.osu', debug=True)
     test.process_map_data()
-    test.process_size()
+    # test.process_size()
     test.process_rotation()
+    # test.plot_adj_hit_errors()
+    test.least_squares_fit()
     test.plot_adj_hit_errors()

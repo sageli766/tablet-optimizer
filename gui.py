@@ -7,8 +7,6 @@ import matplotlib.pyplot as plt
 from hitDetection import HitDetector
 import configparser
 import os
-
-
 import sv_ttk
 
 
