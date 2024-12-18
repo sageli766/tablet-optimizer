@@ -10,4 +10,4 @@ For each object in a map, an algorithm is used to determine the attempt made by 
 
 Size and tilt adjustments are then returned to the user, and the modifications plotted for easier visualization.
 
-This project is still a work in progress. Future features could include a least-squared-error fit with tilt/size as parameters rather than a simple mean and an improved GUI to automate map selection given a home osu directory.
+This project is still a work in progress. Expect many more features in the future.
