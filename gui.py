@@ -8,6 +8,7 @@ from hitDetection import HitDetector
 import configparser
 import os
 import sv_ttk
+import numpy as np
 
 
 class TabletOptimizerGUI:
@@ -15,6 +16,7 @@ class TabletOptimizerGUI:
         self.default_color = "#262626"
         self.detector = None
         self.config_file = './config.ini'
+        self.home_dir = ''
 
         self.root = root
         self.root.title("Tablet Optimizer")
@@ -90,20 +92,52 @@ class TabletOptimizerGUI:
         config = configparser.ConfigParser()
         if os.path.exists(self.config_file):
             config.read(self.config_file)
+            if 'Paths' in config and 'home_dir' in config['Paths']:
+                self.home_dir = config['Paths']['home_dir']
+                if not os.path.isdir(self.home_dir):
+                    self.log_to_console('Saved home directory is invalid.')
+                    self.home_dir = self.prompt_for_home_dir()
+                    config['Paths']['home_dir'] = self.home_dir
+                    self.save_config()
+                else:
+                    self.log_to_console(f'Home directory set: {self.home_dir}')
+
+            else:
+                self.log_to_console('No home directory found in config. Please select one now.')
+                if 'Paths' not in config:
+                    config['Paths'] = {}
+                config['Paths']['home_dir'] = self.prompt_for_home_dir()
+                self.save_config()
+
             if 'Paths' in config:
-                self.replay_path.set(config['Paths'].get('file1', ''))
-                self.map_path.set(config['Paths'].get('file2', ''))
+                self.replay_path.set(config['Paths'].get('replay_path', ''))
+                self.map_path.set(config['Paths'].get('map_path', ''))
+
             if self.replay_path.get() and self.map_path.get():
                 self.detector = HitDetector(self.replay_path.get(), self.map_path.get())
+
             self.log_to_console("Configuration loaded.")
         else:
             self.log_to_console("No config file found.")
+            config['Paths'] = {}
+            config['Paths']['home_dir'] = self.prompt_for_home_dir()
+            self.save_config()
+
+    def prompt_for_home_dir(self):
+        self.home_dir = filedialog.askdirectory(title='Select an osu! home directory')
+        if not self.home_dir:
+            self.home_dir = os.getcwd()
+            self.log_to_console('No directory selected. Defaulting to current directory.')
+        else:
+            self.log_to_console(f'Home directory set to {self.home_dir}')
+        return self.home_dir
 
     def save_config(self):
         config = configparser.ConfigParser()
         config['Paths'] = {
             'file1': self.replay_path.get(),
-            'file2': self.map_path.get()
+            'file2': self.map_path.get(),
+            'home_dir': self.home_dir
         }
         with open(self.config_file, 'w') as configfile:
             config.write(configfile)
@@ -166,7 +200,7 @@ class TabletOptimizerGUI:
             self.plot_graph(self.figure2, self.canvas2, self.detector.plot_adj_hit_errors)
             self.log_to_console('Processing Successful!')
             self.log_to_console(f'[Suggested Tablet Area Adjustments] tilt: '
-                                f'{self.detector.adj_theta: .3f} size: {self.detector.adj_size: 3f}')
+                                f'{np.degrees(self.detector.adj_theta): .3f} size: {self.detector.adj_size: 3f}')
 
 
 if __name__ == "__main__":
