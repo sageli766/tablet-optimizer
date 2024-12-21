@@ -17,6 +17,7 @@ class TabletOptimizerGUI:
         self.detector = None
         self.config_file = './config.ini'
         self.home_dir = ''
+        self.how = 'lstsq'
 
         self.root = root
         self.root.title("Tablet Optimizer")
@@ -196,7 +197,10 @@ class TabletOptimizerGUI:
         else:
             self.log_to_console("Processing angle and mean size deviation...")
             self.detector.process_size()
-            self.detector.process_rotation()
+            if self.how == 'lstsq':
+                self.detector.least_squares_fit()
+            else:
+                self.detector.process_rotation()
             self.plot_graph(self.figure2, self.canvas2, self.detector.plot_adj_hit_errors)
             self.log_to_console('Processing Successful!')
             self.log_to_console(f'[Suggested Tablet Area Adjustments] tilt: '
