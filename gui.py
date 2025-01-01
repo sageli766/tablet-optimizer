@@ -92,6 +92,13 @@ class TabletOptimizerGUI:
         config = configparser.ConfigParser()
         if os.path.exists(self.config_file):
             config.read(self.config_file)
+
+            if 'Paths' in config:
+                self.replay_path.set(config['Paths'].get('replay_path', ''))
+                self.map_path.set(config['Paths'].get('map_path', ''))
+
+                print(self.replay_path.get())
+
             if 'Paths' in config and 'home_dir' in config['Paths']:
                 self.home_dir = config['Paths']['home_dir']
                 if not os.path.isdir(self.home_dir):
@@ -108,10 +115,6 @@ class TabletOptimizerGUI:
                     config['Paths'] = {}
                 config['Paths']['home_dir'] = self.prompt_for_home_dir()
                 self.save_config()
-
-            if 'Paths' in config:
-                self.replay_path.set(config['Paths'].get('replay_path', ''))
-                self.map_path.set(config['Paths'].get('map_path', ''))
 
             if self.replay_path.get() and self.map_path.get():
                 self.detector = HitDetector(self.replay_path.get(), self.map_path.get())
@@ -135,8 +138,8 @@ class TabletOptimizerGUI:
     def save_config(self):
         config = configparser.ConfigParser()
         config['Paths'] = {
-            'file1': self.replay_path.get(),
-            'file2': self.map_path.get(),
+            'replay_path': self.replay_path.get(),
+            'map_path': self.map_path.get(),
             'home_dir': self.home_dir
         }
         with open(self.config_file, 'w') as configfile:
