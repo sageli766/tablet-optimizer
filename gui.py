@@ -9,6 +9,7 @@ import configparser
 import os
 import sv_ttk
 import numpy as np
+from DBparse import DBparser
 
 
 class TabletOptimizerGUI:
@@ -37,7 +38,7 @@ class TabletOptimizerGUI:
         self.entry1 = ttk.Entry(self.replay_path_frame, textvariable=self.replay_path, width=50)
         self.entry1.grid(row=0, column=1, padx=10, pady=10)
 
-        self.browse1 = ttk.Button(self.replay_path_frame, text="Browse", command=self.load_file1)
+        self.browse1 = ttk.Button(self.replay_path_frame, text="Browse", command=self.load_replay)
         self.browse1.grid(row=0, column=2, padx=0, pady=10)
 
         # Second File Input
@@ -51,7 +52,7 @@ class TabletOptimizerGUI:
         self.entry2 = ttk.Entry(self.map_path_frame, textvariable=self.map_path, width=50)
         self.entry2.grid(row=0, column=1, padx=10, pady=10)
 
-        self.browse2 = ttk.Button(self.map_path_frame, text="Browse", command=self.load_file2)
+        self.browse2 = ttk.Button(self.map_path_frame, text="Browse", command=self.load_map)
         self.browse2.grid(row=0, column=2, padx=0, pady=10)
 
         # Plot Frame
@@ -152,7 +153,7 @@ class TabletOptimizerGUI:
         self.console.config(state='disabled')
         self.console.see(tk.END)
 
-    def load_file1(self):
+    def load_replay(self):
         file_path = filedialog.askopenfilename()
         if file_path:
             if file_path.endswith('.osr'):
@@ -161,7 +162,7 @@ class TabletOptimizerGUI:
             else:
                 self.log_to_console('Please load a valid osu replay file (.osr)')
 
-    def load_file2(self):
+    def load_map(self):
         file_path = filedialog.askopenfilename()
         if file_path:
             if file_path.endswith('.osu'):
