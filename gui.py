@@ -74,6 +74,9 @@ class TabletOptimizerGUI:
         self.dropdown.grid(row=0, column=1, padx=10, pady=10)
         self.dropdown.current(0)
 
+        self.home_dir_button = ttk.Button(self.optimization_frame, text="Set Home Directory", command=self.prompt_for_home_dir)
+        self.home_dir_button.grid(row=0, column=2, padx=10, pady=10)
+
         # Plot Frame
         self.plot_frame = ttk.Frame(root)
         self.plot_frame.grid(row=3, column=0, columnspan=3, padx=10, pady=10)
@@ -127,7 +130,7 @@ class TabletOptimizerGUI:
                     config['Paths']['home_dir'] = self.home_dir
                     self.save_config()
                 else:
-                    self.log_to_console(f'Home directory set: {self.home_dir}')
+                    self.log_to_console(f'Home directory loaded as: {self.home_dir}')
 
             else:
                 self.log_to_console('No home directory found in config. Please select one now.')
@@ -150,9 +153,12 @@ class TabletOptimizerGUI:
         self.home_dir = filedialog.askdirectory(title='Select an osu! home directory')
         if not self.home_dir:
             self.home_dir = os.getcwd()
-            self.log_to_console('No directory selected. Defaulting to current directory.')
-        else:
+            self.log_to_console('No directory selected.')
+        elif self.home_dir.endswith('osu!'):
             self.log_to_console(f'Home directory set to {self.home_dir}')
+        else:
+            self.log_to_console('Please select a valid osu! home directory.')
+            self.home_dir = ''
         return self.home_dir
 
     def save_config(self):
