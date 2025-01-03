@@ -10,6 +10,7 @@ import os
 import sv_ttk
 import numpy as np
 from DBparse import DBparser
+from osrparse import Replay
 
 
 class TabletOptimizerGUI:
@@ -22,8 +23,12 @@ class TabletOptimizerGUI:
         self.root = root
         self.root.title("Tablet Optimizer")
 
+        self.hash_path_dict = None
+
+        optimization = ['Simple Mean', 'Least Squares']
+
         width = 820
-        height = 680
+        height = 760
         self.root.maxsize(width, height)
         self.root.minsize(width, height)
 
@@ -55,9 +60,23 @@ class TabletOptimizerGUI:
         self.browse2 = ttk.Button(self.map_path_frame, text="Browse", command=self.load_map)
         self.browse2.grid(row=0, column=2, padx=0, pady=10)
 
+        self.optimization_frame = ttk.Frame(root)
+        self.optimization_frame.grid(row=2, column= 0, columnspan=3, padx=10, pady=10)
+        self.optimization_label = ttk.Label(self.optimization_frame, text='Optimization Method')
+        self.optimization_label.grid(row=0, column=0, padx=10, pady=10)
+
+        self.optimization_method = tk.StringVar()
+        self.dropdown = ttk.Combobox(self.optimization_frame,
+                                     textvariable=self.optimization_method,
+                                     values=optimization,
+                                     state='readonly')
+
+        self.dropdown.grid(row=0, column=1, padx=10, pady=10)
+        self.dropdown.current(0)
+
         # Plot Frame
         self.plot_frame = ttk.Frame(root)
-        self.plot_frame.grid(row=2, column=0, columnspan=3, padx=10, pady=10)
+        self.plot_frame.grid(row=3, column=0, columnspan=3, padx=10, pady=10)
 
         self.figure1 = plt.Figure(figsize=(3, 3), dpi=100)
         self.figure1.set_facecolor(self.default_color)
@@ -80,7 +99,7 @@ class TabletOptimizerGUI:
 
         # Console box
         self.console = scrolledtext.ScrolledText(root, state='disabled', height=10, width=80, wrap=tk.WORD)
-        self.console.grid(row=3, column=0, columnspan=3, padx=10, pady=10)
+        self.console.grid(row=4, column=0, columnspan=3, padx=10, pady=10)
 
         self.load_config()
         self.root.protocol('WM_DELETE_WINDOW', self.on_close)
@@ -154,16 +173,46 @@ class TabletOptimizerGUI:
         self.console.see(tk.END)
 
     def load_replay(self):
-        file_path = filedialog.askopenfilename()
+        if os.path.exists(self.home_dir):
+            file_path = filedialog.askopenfilename(initialdir=self.home_dir + '/Replays')
+        else:
+            file_path = filedialog.askopenfilename()
+            self.log_to_console('Osu home directory not found, specify path manually.')
         if file_path:
             if file_path.endswith('.osr'):
                 self.replay_path.set(file_path)
                 self.log_to_console(f"Loaded replay: {file_path}")
+                self.get_map_from_path(self.replay_path.get())
             else:
                 self.log_to_console('Please load a valid osu replay file (.osr)')
 
+    def get_map_from_path(self, replay_path):
+        config = configparser.ConfigParser()
+        if os.path.exists(self.config_file):
+            config.read(self.config_file)
+            if config['Paths']['home_dir']:
+                r = Replay.from_path(replay_path)
+                map_hash = r.beatmap_hash
+                if not self.hash_path_dict:
+                    try:
+                        parser = DBparser(f'{self.home_dir}/osu!.db')
+                        self.hash_path_dict = parser.parse()['beatmaps']
+                    except:
+                        self.log_to_console('Error reading osu!.db: please set map path manually.')
+                if self.hash_path_dict:
+                    map_dir = self.home_dir + '/Songs/' + self.hash_path_dict[map_hash][0]
+                    if os.path.isdir(map_dir):
+                        self.map_path.set(map_dir + '/' +self.hash_path_dict[map_hash][1])
+                    else:
+                        self.log_to_console('Map not found. Please set map path manually.')
+
+
     def load_map(self):
-        file_path = filedialog.askopenfilename()
+        if os.path.exists(self.home_dir):
+            file_path = filedialog.askopenfilename(initialdir=self.home_dir + '/Songs')
+        else:
+            file_path = filedialog.askopenfilename()
+            self.log_to_console('Osu home directory not found, specify path manually.')
         if file_path:
             if file_path.endswith('.osu'):
                 self.map_path.set(file_path)
@@ -199,8 +248,11 @@ class TabletOptimizerGUI:
             self.log_to_console('Please specify a valid osu map and replay.')
         else:
             self.log_to_console("Processing angle and mean size deviation...")
-            self.detector.process_size()
-            self.detector.process_rotation()
+            if self.optimization_method.get() == 'Least Squares':
+                self.detector.least_squares_fit()
+            else:
+                self.detector.process_size()
+                self.detector.process_rotation()
             self.plot_graph(self.figure2, self.canvas2, self.detector.plot_adj_hit_errors)
             self.log_to_console('Processing Successful!')
             self.log_to_console(f'[Suggested Tablet Area Adjustments] tilt: '

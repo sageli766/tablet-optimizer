@@ -4,7 +4,7 @@ Parses osu!.db file following https://github.com/ppy/osu/wiki/Legacy-database-fi
 
 import struct
 
-class DBParser:
+class DBparser:
     def __init__(self, file_path):
         self.file_path = file_path
 
@@ -134,7 +134,7 @@ class DBParser:
             mania_scroll_speed = self.read_byte(file)  # Mania scroll speed
 
             # Create hashmap of md5 to file names
-            beatmaps[md5_hash] = osu_file_name
+            beatmaps[md5_hash] = (folder_name, osu_file_name)
 
         return beatmaps
 
@@ -163,6 +163,6 @@ class DBParser:
             }
 
 if __name__ == '__main__':
-    parser = DBParser("C:/Users/sagel/AppData/Local/osu!/osu!.db")
+    parser = DBparser("C:/Users/sagel/AppData/Local/osu!/osu!.db")
     osu_data = parser.parse()
     print(osu_data)

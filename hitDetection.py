@@ -74,7 +74,7 @@ class HitDetector:
         self.replay = replay
         self.map = map
         self.debug = debug
-        self.human_learning_rate = 1.5
+        self.human_learning_rate = human_learning_rate
         self.hits_array = []
         self.circles_array = []
         self.hit_errors = []
@@ -108,6 +108,9 @@ class HitDetector:
 
         r_data = r.replay_data
         m_data = o_map.hit_objects
+
+        print(np.array(r_data[:10]))
+        print(np.array(m_data[:10]))
 
         cs, od = o_map.cs, o_map.od
 
@@ -466,7 +469,9 @@ class HitDetector:
         # TODO: Find the error of user path versus idealized path and calibrate from that
 
 if __name__ == '__main__':
-    test = HitDetector(r'.\replays_lobotomy\razorfruit_BLOODY_RED_fuckedup.osr', r'.\BLOODY_RED.osu', debug=True)
+    replay_path = r"C:\Users\sagel\AppData\Local\osu!\Replays\byeok2044 - katagiri - Sendan Life (katagiri Bootleg) [Destroy the World] (2024-10-31) Osu.osr"
+    map_path = r"C:\Users\sagel\AppData\Local\osu!\Songs\1084298 katagiri - Sendan Life (katagiri Bootleg)\katagiri - Sendan Life (katagiri Bootleg) (Settia) [Destroy the World].osu"
+    test = HitDetector(replay_path, map_path, debug=True)
     test.process_map_data()
     test.process_rotation()
     test.process_size()
