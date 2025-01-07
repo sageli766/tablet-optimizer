@@ -1,3 +1,7 @@
+"""
+Testing script: takes in an auto replay and outputs the replay but rotated
+"""
+
 from osrparse import Replay
 from osrparse import ReplayEventOsu
 from osrparse.utils import Mod, Key
@@ -6,7 +10,6 @@ from osupyparser.osu.objects import Circle, Slider, Spinner
 
 import numpy as np
 import pandas as pd
-from IPython.display import display
 from matplotlib import pyplot as plt
 
 r = Replay.from_path(r'.\replays_lobotomy\auto_BLOODY_RED.osr')

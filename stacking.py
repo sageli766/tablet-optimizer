@@ -1,3 +1,7 @@
+"""
+Translation of https://gist.github.com/peppy/1167470 into Python: credit to Eathan (Shauns) Xu
+"""
+
 from osrparse import Replay
 from osupyparser import OsuFile
 from osupyparser.osu.objects import Circle, Slider, Spinner, Position

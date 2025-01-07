@@ -63,7 +63,7 @@ class HitDetector:
     """
     Class for a hit analyzer object
     """
-    def __init__(self, replay=None, map=None, debug=False, human_learning_rate=1.5, ignore_radius=50):
+    def __init__(self, replay=None, map=None, debug=False, human_learning_rate=1, ignore_radius=50):
         """
         :param replay: relative or absolute path to the replay
         :param map: relative or absolute path to the map
@@ -74,7 +74,7 @@ class HitDetector:
         self.replay = replay
         self.map = map
         self.debug = debug
-        self.human_learning_rate = 1.5
+        self.human_learning_rate = human_learning_rate
         self.hits_array = []
         self.circles_array = []
         self.hit_errors = []
@@ -108,6 +108,9 @@ class HitDetector:
 
         r_data = r.replay_data
         m_data = o_map.hit_objects
+
+        print(np.array(r_data[:10]))
+        print(np.array(m_data[:10]))
 
         cs, od = o_map.cs, o_map.od
 
@@ -158,10 +161,6 @@ class HitDetector:
             curr_hit = Key(int(curr_hit))
             prev_hit = Key(int(prev_hit))
 
-            # if curr_event[0] < 32890 - window_50:
-            #     mask.append(False)
-            #     continue
-
             if curr_hit <= 0:
                 mask.append(False)
             elif (Key.K1 in prev_hit and Key.K2 in prev_hit) and (Key.K1 in curr_hit and Key.K2 not in curr_hit):
@@ -192,9 +191,8 @@ class HitDetector:
         start_idx = 0
         miss_count = 0
         hit_count = 0
-        assigned = [False] * len(hit_attempts)
+        hit_assigned = [False] * len(hit_attempts)
 
-        # TODO: for circles with no associated hit, search and find the timestamp with the closest time to the circle time
         # TODO: round hit errors off
 
         for hit_circle in map_data:
@@ -214,7 +212,7 @@ class HitDetector:
 
             while time < timing_upper and i < len(hit_attempts):
                 time = hit_attempts[i][0]
-                if hit_attempts[i][0] > timing_lower and not isinstance(assigned[i], np.ndarray):
+                if hit_attempts[i][0] > timing_lower and not isinstance(hit_assigned[i], np.ndarray):
                     # Find distance between hit attempt and hit circle
                     x_hit = hit_attempts[i][1]
                     y_hit = hit_attempts[i][2]
@@ -236,7 +234,7 @@ class HitDetector:
                         self.circles_array.append(hit_circle)
                         if self.debug:
                             print(f'HIT time:{time} at: ({x_hit: .2f}, {y_hit: .2f}) time: {hit_circle[0]} circle: ({x_circle: .2f}, {y_circle: .2f})')
-                        assigned[i] = hit_circle
+                        hit_assigned[i] = hit_circle
                         miss = False
                         hit_count += 1
                         start_idx = i
@@ -245,7 +243,7 @@ class HitDetector:
                 i += 1
 
             # if no hit attempts are within the radius of the circle we choose the action closest in time to the circle
-            if miss and not isinstance(assigned[min_delay_idx], np.ndarray):
+            if miss and not isinstance(hit_assigned[min_delay_idx], np.ndarray):
                 x_hit = hit_attempts[min_delay_idx][1]
                 y_hit = hit_attempts[min_delay_idx][2]
                 self.hit_errors.append((x_circle - x_hit, y_circle - y_hit))
@@ -253,7 +251,7 @@ class HitDetector:
                 self.circles_array.append(hit_circle)
                 if self.debug:
                     print(f'MISS time:{time} at: ({x_hit: .2f}, {y_hit: .2f}) time: {hit_circle[0]} circle: ({x_circle: .2f}, {y_circle: .2f})')
-                assigned[min_delay_idx] = hit_circle
+                hit_assigned[min_delay_idx] = hit_circle
                 start_idx = min_delay_idx
                 miss_count += 1
 
@@ -429,9 +427,51 @@ class HitDetector:
 
         return theta_optimal, size_optimal
 
+    # EXPERIMENTAL
+    def path_error(self):
+        r = Replay.from_path(self.replay)
+        o_map = OsuFile(self.map).parse_file()
+
+        r_data = r.replay_data
+        m_data = o_map.hit_objects
+
+        hit_data = []
+        map_data = []
+
+        m_data = stacking_fix(m_data, o_map, self.radius, False)
+
+        # Convert replay and map data into numpy arrays for ease of use
+        for i, event in enumerate(r_data):
+            time_delta = event.__getattribute__('time_delta')
+            x = event.__getattribute__('x')
+            y = event.__getattribute__('y')
+            keys = event.__getattribute__('keys')
+
+            hit_data.append([time_delta, x, y, keys])
+
+        for i, circle in enumerate(m_data):
+            if isinstance(circle, Spinner):
+                continue
+
+            x, y = circle.pos.x, circle.pos.y
+            time = circle.start_time
+
+            map_data.append([time, x, y])
+
+        # Convert to numpy arrays
+        hit_data = np.array(hit_data)
+        map_data = np.array(map_data)
+
+        # Change relative time to absolute time: cumulative sum across first column
+        hit_data[:, 0] = np.cumsum(hit_data[:, 0])
+
+        # TODO: Generate an idealized path based on map object locations
+        # TODO: Find the error of user path versus idealized path and calibrate from that
 
 if __name__ == '__main__':
-    test = HitDetector(r'.\replays_misc\sendan_hyeok.osr', r'.\maps\sendan.osu', debug=True)
+    replay_path = r"C:\Users\sagel\AppData\Local\osu!\Replays\byeok2044 - katagiri - Sendan Life (katagiri Bootleg) [Destroy the World] (2024-10-31) Osu.osr"
+    map_path = r"C:\Users\sagel\AppData\Local\osu!\Songs\1084298 katagiri - Sendan Life (katagiri Bootleg)\katagiri - Sendan Life (katagiri Bootleg) (Settia) [Destroy the World].osu"
+    test = HitDetector(replay_path, map_path, debug=True)
     test.process_map_data()
     test.process_rotation()
     test.process_size()
