@@ -26,7 +26,7 @@ class TabletOptimizerGUI:
 
         self.hash_path_dict = None
 
-        optimization = ['Simple Mean', 'Least Squares']
+        optimization = ['Simple Mean', 'Least Squares', 'Path Error (experimental)']
 
         width = 820
         height = 760
@@ -253,21 +253,17 @@ class TabletOptimizerGUI:
     def calibrate_area(self):
         if not self.detector:
             self.log_to_console('Please specify a valid osu map and replay.')
+        if self.optimization_method.get() == 'Least Squares':
+            self.detector.least_squares_fit()
+        elif self.optimization_method.get() == 'Path Error (experimental)':
+            self.detector.path_error()
         else:
-            self.log_to_console("Processing angle and mean size deviation...")
             self.detector.process_size()
-            if self.how == 'lstsq':
-                self.detector.least_squares_fit()
-            else:
-            if self.optimization_method.get() == 'Least Squares':
-                self.detector.least_squares_fit()
-            else:
-                self.detector.process_size()
-                self.detector.process_rotation()
-            self.plot_graph(self.figure2, self.canvas2, self.detector.plot_adj_hit_errors)
-            self.log_to_console('Processing Successful!')
-            self.log_to_console(f'[Suggested Tablet Area Adjustments] tilt: '
-                                f'{np.degrees(self.detector.adj_theta): .3f} size: {self.detector.adj_size: 3f}')
+            self.detector.process_rotation()
+        self.plot_graph(self.figure2, self.canvas2, self.detector.plot_adj_hit_errors)
+        self.log_to_console('Processing Successful!')
+        self.log_to_console(f'[Suggested Tablet Area Adjustments] tilt: '
+                            f'{np.degrees(self.detector.adj_theta): .3f} size: {self.detector.adj_size: 3f}')
 
 
 if __name__ == "__main__":

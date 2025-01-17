@@ -85,7 +85,10 @@ class DBparser:
             for _ in range(4):  # For each gamemode
                 pair_count = self.read_int(file)
                 for _ in range(pair_count):
-                    file.read(14) # Size of Int-Double pair
+                    if osu_version < 20250107:
+                        file.read(14) # Size of Int-Double pair (used before jan 7 2025)
+                    else:
+                        file.read(10) # Size of Int-Float pair
 
             drain_time = self.read_int(file) # Drain time
             tot_time = self.read_int(file) # Total time
@@ -163,6 +166,6 @@ class DBparser:
             }
 
 if __name__ == '__main__':
-    parser = DBparser("C:/Users/sagel/AppData/Local/osu!/osu!.db")
+    parser = DBparser(r"C:\Users\sagel\AppData\Local\osu!\osu!.db")
     osu_data = parser.parse()
     print(osu_data)

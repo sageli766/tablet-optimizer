@@ -1,12 +1,12 @@
-from osrparse import Replay
-from osupyparser import OsuFile
-from osupyparser.osu.objects import Circle, Slider, Spinner
-from osrparse.utils import Mod, Key
-from stacking import stacking_fix
-
 import numpy as np
-from scipy.optimize import least_squares
 from matplotlib import pyplot as plt
+from osrparse import Replay
+from osrparse.utils import Key
+from osupyparser import OsuFile
+from osupyparser.osu.objects import Spinner
+from scipy.optimize import least_squares
+
+from stacking import stacking_fix
 
 # print numpy arrays without scientific notation
 np.set_printoptions(suppress=True)
@@ -192,8 +192,6 @@ class HitDetector:
         miss_count = 0
         hit_count = 0
         hit_assigned = [False] * len(hit_attempts)
-
-        # TODO: round hit errors off
 
         for hit_circle in map_data:
             miss = True
@@ -390,7 +388,15 @@ class HitDetector:
         return fig, ax
 
     def least_squares_fit(self):
-        guess = [0., 0.]
+        """
+        Performs a least-squares fit to adjust hit locations relative to circle locations
+        by optimizing rotation (theta) and scaling (size)
+        :return: A tuple containing two elements:
+            - theta_optimal (float): Optimal rotation value (in radians) for alignment.
+            - size_optimal (float): Optimal scaling factor for size adjustment.
+        :rtype: Tuple[float, float]
+        """
+        guess = [0., 1.]
 
         def residual(params):
             theta, size = params
@@ -427,7 +433,47 @@ class HitDetector:
 
         return theta_optimal, size_optimal
 
-    # EXPERIMENTAL
+    def generate_ideal_path(self, data_array):
+        """
+        Helper function for path error optimization method.
+        Converts a numpy array [time, x, y] into an array of interpolated positions per millisecond.
+        :param data_array: numpy array with shape [N, 3] where each row contains time, x, y
+        :return: Array with structure [[time, x, y], ...] for each millisecond.
+        """
+        interpolated_array = []
+
+        for i in range(len(data_array) - 1):
+            start_time, start_x, start_y = data_array[i]
+            end_time, end_x, end_y = data_array[i + 1]
+
+            for t in range(int(start_time), int(end_time) + 1):
+                factor = (t - start_time) / (end_time - start_time)
+                inter_x = (1 - factor) * start_x + factor * end_x
+                inter_y = (1 - factor) * start_y + factor * end_y
+                interpolated_array.append([t, inter_x, inter_y])
+
+        return np.array(interpolated_array)
+
+    def filter_hit_data(self, hit_data, map_data):
+        """
+        Helper function for path error optimization method.
+        Masks out rows in hit_data based on time gaps in map_data greater than 5 seconds.
+        Ensures no duplicate time stamps are included in hit_data.
+        :param hit_data: numpy array with shape [N, 4], where each row contains time, x, y, and action.
+        :param map_data: numpy array with shape [N, 3], where each row contains time, x, and y.
+        :return: Masked numpy array of hit_data.
+        """
+        _, unique_indices = np.unique(hit_data[:, 0], return_index=True)
+        hit_data = hit_data[np.sort(unique_indices)]
+
+        mask = np.zeros(len(hit_data), dtype=bool)
+        for i in range(len(map_data) - 1):
+            start_time, end_time = map_data[i, 0], map_data[i + 1, 0]
+            if end_time - start_time > 1000:
+                mask = mask | ((hit_data[:, 0] >= start_time) & (hit_data[:, 0] <= end_time))
+        return hit_data[~mask]
+
+
     def path_error(self):
         r = Replay.from_path(self.replay)
         o_map = OsuFile(self.map).parse_file()
@@ -465,15 +511,68 @@ class HitDetector:
         # Change relative time to absolute time: cumulative sum across first column
         hit_data[:, 0] = np.cumsum(hit_data[:, 0])
 
-        # TODO: Generate an idealized path based on map object locations
-        # TODO: Find the error of user path versus idealized path and calibrate from that
+        # Filter hit_data based on time gaps in map_data
+        hit_data = self.filter_hit_data(hit_data, map_data)
+        ideal_path = self.generate_ideal_path(map_data)
+
+        mask_hit = np.isin(hit_data[:, 0], ideal_path[:, 0])  # Check if hit_data times exist in ideal_path times
+        hit_data = hit_data[mask_hit]
+
+        mask_path = np.array([ideal_path[a, 0] in hit_data[:, 0] for a in range(len(ideal_path))])
+        masked_path = ideal_path[mask_path]
+
+        _, unique_indices = np.unique(masked_path[:, 0], return_index=True)
+        masked_path = masked_path[np.sort(unique_indices)]
+
+        if self.debug:
+            print(hit_data)
+            print(masked_path)
+
+        guess = [0., 1.]
+
+        def residual(params):
+            theta, size = params
+
+            x_hits = hit_data[:, 1]
+            y_hits = hit_data[:, 2]
+
+            x_path = masked_path[:, 1]
+            y_path = masked_path[:, 2]
+
+            # rotate hits around center of playfield
+            x_hit_adj = (x_hits - 256) * np.cos(theta) - (y_hits - 192) * np.sin(theta) + 256
+            y_hit_adj = (x_hits - 256) * np.sin(theta) + (y_hits - 192) * np.cos(theta) + 192
+
+            # scale hit positions
+            x_hit_adj *= size
+            y_hit_adj *= size
+
+            resid_x = x_path - x_hit_adj
+            resid_y = y_path - y_hit_adj
+
+            return np.concatenate((resid_x, resid_y))
+
+        result = least_squares(residual, guess)
+
+        theta_optimal, size_optimal = result.x
+
+        if self.debug:
+            print(f'[Least squares fit results] Theta: {np.degrees(theta_optimal)}, size: {size_optimal}')
+
+        self.adj_theta = - theta_optimal
+        self.adj_size = (1 - size_optimal)
+
+        return theta_optimal, size_optimal
 
 if __name__ == '__main__':
-    replay_path = r"C:\Users\sagel\AppData\Local\osu!\Replays\byeok2044 - katagiri - Sendan Life (katagiri Bootleg) [Destroy the World] (2024-10-31) Osu.osr"
-    map_path = r"C:\Users\sagel\AppData\Local\osu!\Songs\1084298 katagiri - Sendan Life (katagiri Bootleg)\katagiri - Sendan Life (katagiri Bootleg) (Settia) [Destroy the World].osu"
+    replay_path = r"C:/Users/sagel/AppData/Local/osu!/Replays/razorfruit - Mori Calliope - Excuse My Rudeness, But Could You Please RIP (ReeK's Dude Whats A Genre Remix) [My Scythe Will RIP Apart Your Soul] (2022-04-02) Osu.osr"
+    map_path = r"C:/Users/sagel/AppData/Local/osu!/Songs/1296788 Mori Calliope - Excuse My Rudeness, But Could You Please R/Mori Calliope - Excuse My Rudeness, But Could You Please RIP (ReeK's Dude Whats A Genre Remix) (Fisky) [My Scythe Will RIP Apart Your Soul].osu"
     test = HitDetector(replay_path, map_path, debug=True)
     test.process_map_data()
-    test.process_rotation()
-    test.process_size()
-    test.least_squares_fit()
-    test.plot_adj_hit_errors()
+
+    # test.path_error()
+    # test.process_map_data()
+    # test.process_rotation()
+    # test.process_size()
+    # test.least_squares_fit()
+    # test.plot_adj_hit_errors()
