@@ -1,4 +1,4 @@
-# osu! Tablet Area Optimizer (WIP)
+# osu! Tablet Area Optimizer
 
 An app to analyze hit errors in a map and provide recommended tilt and size adjustments.
 
