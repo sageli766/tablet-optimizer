@@ -1,5 +1,5 @@
 """
-Testing script: takes in an auto replay and outputs the replay but rotated
+Testing script: takes in an auto replay and outputs the replay but rotated a specified angle.
 """
 
 from osrparse import Replay
@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-r = Replay.from_path(r'.\replays_lobotomy\auto_BLOODY_RED.osr')
+r = Replay.from_path(r'debug_replays/auto_BLOODY_RED.osr')
 
 theta = np.radians(5)
 

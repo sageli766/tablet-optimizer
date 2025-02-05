@@ -1,11 +1,20 @@
 import numpy as np
+import pandas as pd
+import os
 from matplotlib import pyplot as plt
+from scipy.optimize import least_squares
+import requests
+from dotenv import load_dotenv
+from ossapi import Ossapi
+
+load_dotenv()
+
 from osrparse import Replay
 from osrparse.utils import Key
 from osupyparser import OsuFile
 from osupyparser.osu.objects import Spinner
-from scipy.optimize import least_squares
 
+from DBparse import DBparser
 from stacking import stacking_fix
 
 # print numpy arrays without scientific notation
@@ -58,6 +67,15 @@ def solve_theta(x1, x2, y1, y2, degrees=True):
 
     return angle
 
+def map_path_from_replay(home_dir, replay_path):
+    parser = DBparser(f'{home_dir}/osu!.db')
+    path_dict = parser.parse()['beatmaps']
+    r = Replay.from_path(replay_path)
+    map_hash = r.beatmap_hash
+    map_dir = home_dir + '/Songs/' + path_dict[map_hash][0]
+    map_path = map_dir + '/' + path_dict[map_hash][1]
+    return map_path
+
 
 class HitDetector:
     """
@@ -109,8 +127,8 @@ class HitDetector:
         r_data = r.replay_data
         m_data = o_map.hit_objects
 
-        print(np.array(r_data[:10]))
-        print(np.array(m_data[:10]))
+        # print(np.array(r_data[:10]))
+        # print(np.array(m_data[:10]))
 
         cs, od = o_map.cs, o_map.od
 
@@ -504,18 +522,17 @@ class HitDetector:
 
             map_data.append([time, x, y])
 
-        # Convert to numpy arrays
         hit_data = np.array(hit_data)
         map_data = np.array(map_data)
 
-        # Change relative time to absolute time: cumulative sum across first column
+        # change relative time to absolute time
         hit_data[:, 0] = np.cumsum(hit_data[:, 0])
 
-        # Filter hit_data based on time gaps in map_data
+        # filter hit_data based on time gaps in map_data
         hit_data = self.filter_hit_data(hit_data, map_data)
         ideal_path = self.generate_ideal_path(map_data)
 
-        mask_hit = np.isin(hit_data[:, 0], ideal_path[:, 0])  # Check if hit_data times exist in ideal_path times
+        mask_hit = np.isin(hit_data[:, 0], ideal_path[:, 0])  # check if hit_data times exist in ideal_path
         hit_data = hit_data[mask_hit]
 
         mask_path = np.array([ideal_path[a, 0] in hit_data[:, 0] for a in range(len(ideal_path))])
@@ -557,19 +574,97 @@ class HitDetector:
         theta_optimal, size_optimal = result.x
 
         if self.debug:
-            print(f'[Least squares fit results] Theta: {np.degrees(theta_optimal)}, size: {size_optimal}')
+            print(f'[Path Error Lease Squares Results] Theta: {np.degrees(theta_optimal)}, size: {size_optimal}')
 
         self.adj_theta = - theta_optimal
         self.adj_size = (1 - size_optimal)
 
         return theta_optimal, size_optimal
 
+    def get_osu_access_token(client_id, client_secret):
+        token_url = "https://osu.ppy.sh/oauth/token"
+        payload = {
+            "client_id": client_id,
+            'redirect_uri': 'https://google.com',
+            "client_secret": client_secret,
+            "grant_type": "client_credentials",
+            "scope": "public"  # adjust the scopes as needed
+        }
+        response = requests.post(token_url, data=payload)
+        response.raise_for_status()  # raises an error for bad responses
+        token_info = response.json()
+        return token_info["access_token"]
+
+    def to_csv(self, path):
+        if not self.hits_array or not self.circles_array:
+            print('Please process replay before saving.')
+            return
+
+        home_dir = 'C:/Users/sagel/AppData/Local/osu!'
+
+        r = Replay.from_path(self.replay)
+        map_path = map_path_from_replay(home_dir, self.replay)
+        o_map = OsuFile(map_path).parse_file()
+        map_name = o_map.title
+        player_id = r.username
+
+        # Make .env file with your client id and client secrets
+        client_id = os.getenv('CLIENT_ID')
+        client_secret = os.getenv('CLIENT_SECRET')
+
+        api = Ossapi(client_id, client_secret)
+
+        # Extract player statistics like performance and accuracy
+        player_stats = api.user(player_id).statistics
+
+        performance = player_stats.pp
+        acc = player_stats.hit_accuracy
+
+        # Convert analyzer data into dataframes for ease of use
+        objects = pd.DataFrame(self.circles_array, columns=['time', 'x', 'y'])
+
+        # Subtraction of consecutive objects gives us distance and timing between circles
+        objects_diff = objects - objects.shift(1)
+        objects_diff.fillna(0, inplace=True)
+        jump_distance = np.linalg.norm(objects_diff[['x', 'y']], axis=1)
+        jump_delta_t = objects_diff['time']
+
+        # Jump speed is defined as distance (game pixels) / time (ms) and has dimensionality units (game pixels) ms^-1
+        jump_speed = jump_distance / jump_delta_t
+
+        # Extract user hits from analyzer and compute error distances
+        hits = pd.DataFrame(self.hits_array, columns=['time', 'x', 'y', 'action'])
+        hit_errors_x = hits['x'] - objects['x']
+        hit_errors_y = hits['y'] - objects['y']
+        hit_errors = np.linalg.norm(np.vstack((hit_errors_x, hit_errors_y)), axis=0)
+
+        if np.std(hit_errors) > 100:
+            return 'Extremely high standard deviation in hit errors. Possible error with script.'
+
+        # Create dataframe for export
+        n_rows = len(hit_errors)
+        data = pd.DataFrame({
+            'player_id': [player_id] * n_rows,
+            'player_pp': [performance] * n_rows,
+            'player_acc': [acc] * n_rows,
+            'map_id': [map_name] * n_rows,
+            'error_distance': hit_errors,
+            'jump_distance': jump_distance,
+            'jump_delta_t': jump_delta_t,
+            'jump_speed': jump_speed
+        })
+
+        data.to_csv(path, index=False)
+
 if __name__ == '__main__':
-    replay_path = r"C:/Users/sagel/AppData/Local/osu!/Replays/razorfruit - Mori Calliope - Excuse My Rudeness, But Could You Please RIP (ReeK's Dude Whats A Genre Remix) [My Scythe Will RIP Apart Your Soul] (2022-04-02) Osu.osr"
-    map_path = r"C:/Users/sagel/AppData/Local/osu!/Songs/1296788 Mori Calliope - Excuse My Rudeness, But Could You Please R/Mori Calliope - Excuse My Rudeness, But Could You Please RIP (ReeK's Dude Whats A Genre Remix) (Fisky) [My Scythe Will RIP Apart Your Soul].osu"
+    replay_path = r"replays_gmtn/razorfruit_gmtn.osr"
+    home_dir = 'C:/Users/sagel/AppData/Local/osu!'
+    map_path = map_path_from_replay(home_dir, replay_path)
+
     test = HitDetector(replay_path, map_path, debug=True)
     test.process_map_data()
-
+    test.to_csv('test.csv')
+    pass
     # test.path_error()
     # test.process_map_data()
     # test.process_rotation()
