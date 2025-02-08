@@ -10,7 +10,7 @@ from ossapi import Ossapi
 load_dotenv()
 
 from osrparse import Replay
-from osrparse.utils import Key
+from osrparse.utils import Key, Mod
 from osupyparser import OsuFile
 from osupyparser.osu.objects import Spinner
 
@@ -630,6 +630,10 @@ class HitDetector:
         jump_delta_t = objects_diff['time']
 
         # Jump speed is defined as distance (game pixels) / time (ms) and has dimensionality units (game pixels) ms^-1
+        if r.mods & Mod.DoubleTime:
+            jump_delta_t *= 0.66
+        elif r.mods & Mod.HalfTime:
+            jump_delta_t *= 1.5
         jump_speed = jump_distance / jump_delta_t
 
         # Extract user hits from analyzer and compute error distances

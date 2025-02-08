@@ -1,0 +1,10 @@
+osrparse==6.0.2
+numpy
+osupyparser
+pandas
+matplotlib
+requests
+python-dotenv
+ossapi
+tkinter
+sv_ttk
